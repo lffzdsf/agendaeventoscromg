@@ -16,10 +16,19 @@ async function ensureStoreFile() {
   }
 }
 
+function cloneSeedEvents() {
+  return JSON.parse(JSON.stringify(seedEvents)) as EventItem[];
+}
+
 async function readEvents(): Promise<EventItem[]> {
-  await ensureStoreFile();
-  const content = await readFile(STORE_FILE, "utf8");
-  return JSON.parse(content) as EventItem[];
+  try {
+    await ensureStoreFile();
+    const content = await readFile(STORE_FILE, "utf8");
+    return JSON.parse(content) as EventItem[];
+  } catch {
+    // In serverless deployments the filesystem can be read-only or ephemeral.
+    return cloneSeedEvents();
+  }
 }
 
 async function writeEvents(items: EventItem[]) {
@@ -46,7 +55,17 @@ export async function saveEvent(input: EventItem) {
     items.push(input);
   }
 
-  await writeEvents(items);
+  try {
+    await writeEvents(items);
+  } catch (error) {
+    if (process.env.VERCEL) {
+      console.warn("Persistencia local indisponivel na Vercel; usando dados temporarios.", error);
+      return input;
+    }
+
+    throw error;
+  }
+
   return input;
 }
 

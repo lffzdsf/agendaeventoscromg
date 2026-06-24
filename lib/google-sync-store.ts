@@ -26,9 +26,13 @@ async function ensureStoreFile() {
 }
 
 async function readStore(): Promise<SyncStore> {
-  await ensureStoreFile();
-  const content = await readFile(STORE_FILE, "utf8");
-  return JSON.parse(content) as SyncStore;
+  try {
+    await ensureStoreFile();
+    const content = await readFile(STORE_FILE, "utf8");
+    return JSON.parse(content) as SyncStore;
+  } catch {
+    return { events: {} };
+  }
 }
 
 async function writeStore(store: SyncStore) {
@@ -47,7 +51,18 @@ export async function saveStoredSpreadsheetForEvent(
 ) {
   const store = await readStore();
   store.events[eventId] = spreadsheet;
-  await writeStore(store);
+
+  try {
+    await writeStore(store);
+  } catch (error) {
+    if (process.env.VERCEL) {
+      console.warn("Persistencia local de sincronizacao indisponivel na Vercel.", error);
+      return store.events[eventId];
+    }
+
+    throw error;
+  }
+
   return store.events[eventId];
 }
 
