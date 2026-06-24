@@ -1,15 +1,18 @@
 import { redirect } from "next/navigation";
 
-import { auth, signIn } from "@/auth";
+import { auth } from "@/auth";
 
 export default async function LoginPage() {
   const session = await auth();
+  const isGoogleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 
   if (session?.user) {
     redirect("/");
   }
 
-  const isGoogleConfigured = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+  if (isGoogleConfigured) {
+    redirect("/api/auth/signin/google?callbackUrl=%2F");
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-2rem)] items-center justify-center px-4 py-10">
@@ -29,24 +32,10 @@ export default async function LoginPage() {
           </p>
         </div>
 
-        {isGoogleConfigured ? (
-          <form
-            className="mt-8"
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/" });
-            }}
-          >
-            <button className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-              Entrar com Google Workspace
-            </button>
-          </form>
-        ) : (
-          <div className="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            Configure `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` e `AUTH_SECRET` no ambiente para
-            habilitar o login corporativo.
-          </div>
-        )}
+        <div className="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+          Configure `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` e `AUTH_SECRET` no ambiente para
+          habilitar o login corporativo.
+        </div>
       </section>
     </div>
   );
