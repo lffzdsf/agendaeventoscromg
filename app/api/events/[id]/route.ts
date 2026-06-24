@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { EventItem } from "@/lib/data";
+import { getGoogleWorkspaceConfig, syncSpreadsheetForEvent } from "@/lib/google-workspace";
 import { getStoredEventById, saveEvent } from "@/lib/events-store";
 
 export async function PUT(
@@ -16,5 +17,15 @@ export async function PUT(
 
   const input = (await request.json()) as EventItem;
   const saved = await saveEvent({ ...input, id });
+  const googleWorkspace = getGoogleWorkspaceConfig();
+
+  if (googleWorkspace.configured) {
+    try {
+      await syncSpreadsheetForEvent(saved.id);
+    } catch (error) {
+      console.warn("Nao foi possivel sincronizar a planilha do evento apos a edicao.", error);
+    }
+  }
+
   return NextResponse.json({ event: saved });
 }

@@ -1,4 +1,37 @@
-function doGet() {
+var EVENT_REGISTRY_TITLE = "Agenda CRO-MG | Base de eventos";
+var EVENT_REGISTRY_SHEET = "Eventos";
+var EVENT_REGISTRY_HEADERS = [
+  "id",
+  "name",
+  "type",
+  "city",
+  "location",
+  "address",
+  "startDate",
+  "endDate",
+  "startTime",
+  "endTime",
+  "audience",
+  "description",
+  "owner",
+  "status",
+  "priority",
+  "pageUrl",
+  "registrationUrl",
+  "driveUrl",
+  "notes"
+];
+
+function doGet(e) {
+  var resource = e && e.parameter ? e.parameter.resource : "";
+
+  if (resource === "events") {
+    return jsonResponse_({
+      ok: true,
+      events: listEvents_()
+    });
+  }
+
   return jsonResponse_({
     ok: true,
     service: "Agenda CRO-MG Apps Script",
@@ -10,13 +43,17 @@ function doPost(e) {
   try {
     var payload = parseRequest_(e);
     assertAuthorized_(payload);
-    assertPayload_(payload);
+    var action = payload.action || "create";
+    assertPayload_(payload, action);
+    var result;
 
-    var action = payload.action === "sync" ? "sync" : "create";
-    var result =
-      action === "sync"
-        ? syncSpreadsheet_(payload)
-        : createOrReuseSpreadsheet_(payload);
+    if (action === "upsertEvent") {
+      result = upsertEvent_(payload);
+    } else if (action === "sync") {
+      result = syncSpreadsheet_(payload);
+    } else {
+      result = createOrReuseSpreadsheet_(payload);
+    }
 
     return jsonResponse_(result);
   } catch (error) {
@@ -45,7 +82,14 @@ function assertAuthorized_(payload) {
   }
 }
 
-function assertPayload_(payload) {
+function assertPayload_(payload, action) {
+  if (action === "upsertEvent") {
+    if (!payload.event || !payload.event.id || !payload.event.name) {
+      throw new Error("Os dados do evento são obrigatórios.");
+    }
+    return;
+  }
+
   if (!payload.eventId) {
     throw new Error("eventId é obrigatório.");
   }
@@ -57,6 +101,184 @@ function assertPayload_(payload) {
   if (!payload.sheets || !payload.sheets.length) {
     throw new Error("Nenhuma aba foi enviada para sincronização.");
   }
+}
+
+function upsertEvent_(payload) {
+  var event = normalizeEvent_(payload.event);
+  var spreadsheet = getOrCreateEventRegistrySpreadsheet_(payload.folderId);
+  var sheet = ensureEventRegistrySheet_(spreadsheet);
+  var data = sheet.getDataRange().getValues();
+  var targetRow = -1;
+
+  for (var rowIndex = 1; rowIndex < data.length; rowIndex++) {
+    if (String(data[rowIndex][0] || "") === event.id) {
+      targetRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  var rowValues = eventToRow_(event);
+
+  if (targetRow === -1) {
+    targetRow = sheet.getLastRow() + 1;
+  }
+
+  sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+  styleSheet_(sheet, EVENT_REGISTRY_HEADERS.length);
+
+  return {
+    ok: true,
+    event: event
+  };
+}
+
+function listEvents_() {
+  try {
+    var spreadsheet = getOrCreateEventRegistrySpreadsheet_("");
+    var sheet = ensureEventRegistrySheet_(spreadsheet);
+    var values = sheet.getDataRange().getValues();
+
+    if (!values || values.length <= 1) {
+      return [];
+    }
+
+    var events = [];
+    for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
+      var row = values[rowIndex];
+      if (!String(row[0] || "").trim()) {
+        continue;
+      }
+      events.push(rowToEvent_(row));
+    }
+
+    return events;
+  } catch (error) {
+    Logger.log(error);
+    return [];
+  }
+}
+
+function getOrCreateEventRegistrySpreadsheet_(folderId) {
+  var storedId = PropertiesService.getScriptProperties().getProperty(
+    "EVENT_REGISTRY_SPREADSHEET_ID"
+  );
+
+  if (storedId && fileExists_(storedId)) {
+    return SpreadsheetApp.openById(storedId);
+  }
+
+  if (folderId) {
+    var folder = DriveApp.getFolderById(folderId);
+    var files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
+
+    while (files.hasNext()) {
+      var file = files.next();
+      if (file.getName() === EVENT_REGISTRY_TITLE) {
+        PropertiesService.getScriptProperties().setProperty(
+          "EVENT_REGISTRY_SPREADSHEET_ID",
+          file.getId()
+        );
+        return SpreadsheetApp.openById(file.getId());
+      }
+    }
+  }
+
+  var spreadsheet = SpreadsheetApp.create(EVENT_REGISTRY_TITLE);
+  PropertiesService.getScriptProperties().setProperty(
+    "EVENT_REGISTRY_SPREADSHEET_ID",
+    spreadsheet.getId()
+  );
+  moveFileToTargetFolder_(spreadsheet.getId(), folderId);
+  ensureEventRegistrySheet_(spreadsheet);
+  return spreadsheet;
+}
+
+function ensureEventRegistrySheet_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(EVENT_REGISTRY_SHEET);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(EVENT_REGISTRY_SHEET);
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet
+      .getRange(1, 1, 1, EVENT_REGISTRY_HEADERS.length)
+      .setValues([EVENT_REGISTRY_HEADERS]);
+    styleSheet_(sheet, EVENT_REGISTRY_HEADERS.length);
+  }
+
+  return sheet;
+}
+
+function normalizeEvent_(event) {
+  return {
+    id: String(event.id || ""),
+    name: String(event.name || ""),
+    type: String(event.type || ""),
+    city: String(event.city || ""),
+    location: String(event.location || ""),
+    address: String(event.address || ""),
+    startDate: String(event.startDate || ""),
+    endDate: String(event.endDate || ""),
+    startTime: String(event.startTime || ""),
+    endTime: String(event.endTime || ""),
+    audience: String(event.audience || ""),
+    description: String(event.description || ""),
+    owner: String(event.owner || ""),
+    status: String(event.status || ""),
+    priority: String(event.priority || ""),
+    pageUrl: String(event.pageUrl || ""),
+    registrationUrl: String(event.registrationUrl || ""),
+    driveUrl: String(event.driveUrl || ""),
+    notes: String(event.notes || "")
+  };
+}
+
+function eventToRow_(event) {
+  return [
+    event.id,
+    event.name,
+    event.type,
+    event.city,
+    event.location,
+    event.address,
+    event.startDate,
+    event.endDate,
+    event.startTime,
+    event.endTime,
+    event.audience,
+    event.description,
+    event.owner,
+    event.status,
+    event.priority,
+    event.pageUrl,
+    event.registrationUrl,
+    event.driveUrl,
+    event.notes
+  ];
+}
+
+function rowToEvent_(row) {
+  return {
+    id: String(row[0] || ""),
+    name: String(row[1] || ""),
+    type: String(row[2] || ""),
+    city: String(row[3] || ""),
+    location: String(row[4] || ""),
+    address: String(row[5] || ""),
+    startDate: String(row[6] || ""),
+    endDate: String(row[7] || ""),
+    startTime: String(row[8] || ""),
+    endTime: String(row[9] || ""),
+    audience: String(row[10] || ""),
+    description: String(row[11] || ""),
+    owner: String(row[12] || ""),
+    status: String(row[13] || ""),
+    priority: String(row[14] || ""),
+    pageUrl: String(row[15] || ""),
+    registrationUrl: String(row[16] || ""),
+    driveUrl: String(row[17] || ""),
+    notes: String(row[18] || "")
+  };
 }
 
 function createOrReuseSpreadsheet_(payload) {
