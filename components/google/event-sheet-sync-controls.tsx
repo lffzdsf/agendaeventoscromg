@@ -12,6 +12,20 @@ type SyncResponse = {
   syncedAt?: string;
 };
 
+async function readJsonSafely<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function EventSheetSyncControls({
   eventId,
   initialSpreadsheetUrl,
@@ -46,10 +60,13 @@ export function EventSheetSyncControls({
         body: JSON.stringify({ mode })
       });
 
-      const data = (await response.json()) as SyncResponse;
+      const data = await readJsonSafely<SyncResponse>(response);
 
-      if (!response.ok || !data.spreadsheetUrl) {
-        throw new Error(data.error ?? "Não foi possível sincronizar a planilha do evento.");
+      if (!response.ok || !data?.spreadsheetUrl) {
+        throw new Error(
+          data?.error ??
+            "Não foi possível sincronizar a planilha do evento. Verifique as variáveis da Vercel e a publicação do Apps Script."
+        );
       }
 
       setSpreadsheetUrl(data.spreadsheetUrl);

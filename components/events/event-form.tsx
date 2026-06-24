@@ -81,6 +81,20 @@ function toFormData(initialData?: EventItem | null) {
   };
 }
 
+async function readJsonSafely<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function EventForm({ initialData, mode }: EventFormProps) {
   const router = useRouter();
   const [formData, setFormData] = React.useState(() => toFormData(initialData));
@@ -111,10 +125,13 @@ export function EventForm({ initialData, mode }: EventFormProps) {
         }
       );
 
-      const data = (await response.json()) as { error?: string; event?: EventItem };
+      const data = await readJsonSafely<{ error?: string; event?: EventItem }>(response);
 
-      if (!response.ok || !data.event) {
-        throw new Error(data.error ?? "Não foi possível salvar o evento.");
+      if (!response.ok || !data?.event) {
+        throw new Error(
+          data?.error ??
+            "Não foi possível salvar o evento. Verifique se o backend publicado está respondendo corretamente."
+        );
       }
 
       router.push(`/events/${data.event.id}`);
