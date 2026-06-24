@@ -19,7 +19,10 @@ var EVENT_REGISTRY_HEADERS = [
   "pageUrl",
   "registrationUrl",
   "driveUrl",
-  "notes"
+  "notes",
+  "spreadsheetId",
+  "spreadsheetUrl",
+  "syncedAt"
 ];
 
 function doGet(e) {
@@ -30,6 +33,10 @@ function doGet(e) {
       ok: true,
       events: listEvents_()
     });
+  }
+
+  if (resource === "binding") {
+    return jsonResponse_(getEventBinding_(e && e.parameter ? e.parameter.eventId : ""));
   }
 
   return jsonResponse_({
@@ -105,26 +112,7 @@ function assertPayload_(payload, action) {
 
 function upsertEvent_(payload) {
   var event = normalizeEvent_(payload.event);
-  var spreadsheet = getOrCreateEventRegistrySpreadsheet_(payload.folderId);
-  var sheet = ensureEventRegistrySheet_(spreadsheet);
-  var data = sheet.getDataRange().getValues();
-  var targetRow = -1;
-
-  for (var rowIndex = 1; rowIndex < data.length; rowIndex++) {
-    if (String(data[rowIndex][0] || "") === event.id) {
-      targetRow = rowIndex + 1;
-      break;
-    }
-  }
-
-  var rowValues = eventToRow_(event);
-
-  if (targetRow === -1) {
-    targetRow = sheet.getLastRow() + 1;
-  }
-
-  sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
-  styleSheet_(sheet, EVENT_REGISTRY_HEADERS.length);
+  upsertEventRecord_(event, {});
 
   return {
     ok: true,
@@ -148,7 +136,11 @@ function listEvents_() {
       if (!String(row[0] || "").trim()) {
         continue;
       }
-      events.push(rowToEvent_(row));
+      var event = rowToEvent_(row);
+      if (event.spreadsheetId) {
+        event = readEventFromSpreadsheet_(event.spreadsheetId, event);
+      }
+      events.push(stripBindingFields_(event));
     }
 
     return events;
@@ -156,6 +148,30 @@ function listEvents_() {
     Logger.log(error);
     return [];
   }
+}
+
+function getEventBinding_(eventId) {
+  if (!eventId) {
+    return {
+      ok: false,
+      error: "eventId é obrigatório."
+    };
+  }
+
+  var event = findEventRecordById_(eventId);
+  if (!event || !event.spreadsheetId || !event.spreadsheetUrl) {
+    return {
+      ok: true
+    };
+  }
+
+  return {
+    ok: true,
+    spreadsheetId: event.spreadsheetId,
+    spreadsheetUrl: event.spreadsheetUrl,
+    title: event.name ? event.name + " | CRO-MG" : "",
+    syncedAt: event.syncedAt || ""
+  };
 }
 
 function getOrCreateEventRegistrySpreadsheet_(folderId) {
@@ -229,7 +245,10 @@ function normalizeEvent_(event) {
     pageUrl: String(event.pageUrl || ""),
     registrationUrl: String(event.registrationUrl || ""),
     driveUrl: String(event.driveUrl || ""),
-    notes: String(event.notes || "")
+    notes: String(event.notes || ""),
+    spreadsheetId: String(event.spreadsheetId || ""),
+    spreadsheetUrl: String(event.spreadsheetUrl || ""),
+    syncedAt: String(event.syncedAt || "")
   };
 }
 
@@ -253,7 +272,10 @@ function eventToRow_(event) {
     event.pageUrl,
     event.registrationUrl,
     event.driveUrl,
-    event.notes
+    event.notes,
+    event.spreadsheetId,
+    event.spreadsheetUrl,
+    event.syncedAt
   ];
 }
 
@@ -277,8 +299,137 @@ function rowToEvent_(row) {
     pageUrl: String(row[15] || ""),
     registrationUrl: String(row[16] || ""),
     driveUrl: String(row[17] || ""),
-    notes: String(row[18] || "")
+    notes: String(row[18] || ""),
+    spreadsheetId: String(row[19] || ""),
+    spreadsheetUrl: String(row[20] || ""),
+    syncedAt: String(row[21] || "")
   };
+}
+
+function stripBindingFields_(event) {
+  return {
+    id: event.id,
+    name: event.name,
+    type: event.type,
+    city: event.city,
+    location: event.location,
+    address: event.address,
+    startDate: event.startDate,
+    endDate: event.endDate,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    audience: event.audience,
+    description: event.description,
+    owner: event.owner,
+    status: event.status,
+    priority: event.priority,
+    pageUrl: event.pageUrl,
+    registrationUrl: event.registrationUrl,
+    driveUrl: event.driveUrl,
+    notes: event.notes
+  };
+}
+
+function upsertEventRecord_(event, binding) {
+  var normalizedEvent = normalizeEvent_(event || {});
+  var currentRecord = findEventRecordById_(normalizedEvent.id);
+  var spreadsheet = getOrCreateEventRegistrySpreadsheet_("");
+  var sheet = ensureEventRegistrySheet_(spreadsheet);
+  var data = sheet.getDataRange().getValues();
+  var targetRow = -1;
+
+  for (var rowIndex = 1; rowIndex < data.length; rowIndex++) {
+    if (String(data[rowIndex][0] || "") === normalizedEvent.id) {
+      targetRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  normalizedEvent.spreadsheetId = String(
+    binding.spreadsheetId ||
+      normalizedEvent.spreadsheetId ||
+      (currentRecord ? currentRecord.spreadsheetId : "") ||
+      ""
+  );
+  normalizedEvent.spreadsheetUrl = String(
+    binding.spreadsheetUrl ||
+      normalizedEvent.spreadsheetUrl ||
+      (currentRecord ? currentRecord.spreadsheetUrl : "") ||
+      ""
+  );
+  normalizedEvent.syncedAt = String(
+    binding.syncedAt ||
+      normalizedEvent.syncedAt ||
+      (currentRecord ? currentRecord.syncedAt : "") ||
+      ""
+  );
+
+  var rowValues = eventToRow_(normalizedEvent);
+
+  if (targetRow === -1) {
+    targetRow = sheet.getLastRow() + 1;
+  }
+
+  sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+  styleSheet_(sheet, EVENT_REGISTRY_HEADERS.length);
+}
+
+function findEventRecordById_(eventId) {
+  if (!eventId) {
+    return null;
+  }
+
+  var spreadsheet = getOrCreateEventRegistrySpreadsheet_("");
+  var sheet = ensureEventRegistrySheet_(spreadsheet);
+  var values = sheet.getDataRange().getValues();
+
+  for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
+    if (String(values[rowIndex][0] || "") === eventId) {
+      return rowToEvent_(values[rowIndex]);
+    }
+  }
+
+  return null;
+}
+
+function readEventFromSpreadsheet_(spreadsheetId, fallbackEvent) {
+  try {
+    var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    var sheet = spreadsheet.getSheetByName("Eventos");
+
+    if (!sheet || sheet.getLastRow() < 2) {
+      return fallbackEvent;
+    }
+
+    var row = sheet.getRange(2, 1, 1, 19).getDisplayValues()[0];
+    return normalizeEvent_({
+      id: row[0] || fallbackEvent.id,
+      name: row[1] || fallbackEvent.name,
+      type: row[2] || fallbackEvent.type,
+      city: row[3] || fallbackEvent.city,
+      location: row[4] || fallbackEvent.location,
+      address: row[5] || fallbackEvent.address,
+      startDate: row[6] || fallbackEvent.startDate,
+      endDate: row[7] || fallbackEvent.endDate,
+      startTime: row[8] || fallbackEvent.startTime,
+      endTime: row[9] || fallbackEvent.endTime,
+      audience: row[10] || fallbackEvent.audience,
+      description: row[11] || fallbackEvent.description,
+      owner: row[12] || fallbackEvent.owner,
+      status: row[13] || fallbackEvent.status,
+      priority: row[14] || fallbackEvent.priority,
+      pageUrl: row[15] || fallbackEvent.pageUrl,
+      registrationUrl: row[16] || fallbackEvent.registrationUrl,
+      driveUrl: row[17] || fallbackEvent.driveUrl,
+      notes: row[18] || fallbackEvent.notes,
+      spreadsheetId: fallbackEvent.spreadsheetId,
+      spreadsheetUrl: fallbackEvent.spreadsheetUrl,
+      syncedAt: fallbackEvent.syncedAt
+    });
+  } catch (error) {
+    Logger.log(error);
+    return fallbackEvent;
+  }
 }
 
 function createOrReuseSpreadsheet_(payload) {
@@ -297,6 +448,11 @@ function createOrReuseSpreadsheet_(payload) {
   ensureBaseStructure_(spreadsheet, payload);
   writePayloadToSpreadsheet_(spreadsheet, payload);
   persistSpreadsheetBinding_(payload.eventId, spreadsheetId);
+  upsertEventRecord_(payload.event, {
+    spreadsheetId: spreadsheetId,
+    spreadsheetUrl: spreadsheetUrl,
+    syncedAt: new Date().toISOString()
+  });
 
   return {
     ok: true,
@@ -324,6 +480,11 @@ function syncSpreadsheet_(payload) {
   ensureBaseStructure_(spreadsheet, payload);
   writePayloadToSpreadsheet_(spreadsheet, payload);
   persistSpreadsheetBinding_(payload.eventId, spreadsheetId);
+  upsertEventRecord_(payload.event, {
+    spreadsheetId: spreadsheetId,
+    spreadsheetUrl: spreadsheet.getUrl(),
+    syncedAt: new Date().toISOString()
+  });
 
   return {
     ok: true,
@@ -353,6 +514,8 @@ function ensureBaseStructure_(spreadsheet, payload) {
     metaSheet = spreadsheet.insertSheet("_Meta");
     metaSheet.hideSheet();
   }
+
+  removeDefaultEmptySheets_(spreadsheet, payload);
 }
 
 function writePayloadToSpreadsheet_(spreadsheet, payload) {
@@ -404,6 +567,38 @@ function writeMetaSheet_(spreadsheet, payload) {
 
   metaSheet.getRange(1, 1, metaValues.length, 2).setValues(metaValues);
   metaSheet.hideSheet();
+}
+
+function removeDefaultEmptySheets_(spreadsheet, payload) {
+  var allowedNames = {};
+  payload.sheets.forEach(function(sheetPayload) {
+    allowedNames[sheetPayload.sheetName] = true;
+  });
+  allowedNames["_Meta"] = true;
+
+  var sheets = spreadsheet.getSheets();
+  sheets.forEach(function(sheet) {
+    var sheetName = sheet.getName();
+    var isDefaultName =
+      sheetName === "Sheet1" ||
+      sheetName === "Página1" ||
+      /^Sheet\d+$/.test(sheetName) ||
+      /^Página\d+$/.test(sheetName);
+
+    if (allowedNames[sheetName] || !isDefaultName) {
+      return;
+    }
+
+    var hasContent = sheet.getLastRow() > 0 || sheet.getLastColumn() > 0;
+
+    if (hasContent && sheet.getDataRange().getDisplayValues().join("").trim() !== "") {
+      return;
+    }
+
+    if (spreadsheet.getSheets().length > 1) {
+      spreadsheet.deleteSheet(sheet);
+    }
+  });
 }
 
 function persistSpreadsheetBinding_(eventId, spreadsheetId) {

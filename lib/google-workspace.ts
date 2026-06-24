@@ -24,6 +24,7 @@ type EventSheetRow = {
 };
 
 type AppsScriptResponse = {
+  ok?: boolean;
   error?: string;
   mode?: "created" | "synced";
   spreadsheetId?: string;
@@ -320,10 +321,45 @@ async function callAppsScript(
   };
 }
 
+async function fetchBindingFromAppsScript(eventId: string) {
+  const config = getGoogleWorkspaceConfig();
+
+  if (!config.configured) {
+    return null;
+  }
+
+  const url = new URL(config.webAppUrl);
+  url.searchParams.set("resource", "binding");
+  url.searchParams.set("eventId", eventId);
+
+  const response = await fetch(url, {
+    method: "GET",
+    cache: "no-store"
+  });
+
+  const result = (await response.json().catch(() => ({}))) as AppsScriptResponse;
+
+  if (!response.ok || result.ok === false) {
+    return null;
+  }
+
+  if (!result.spreadsheetId || !result.spreadsheetUrl) {
+    return null;
+  }
+
+  return {
+    spreadsheetId: result.spreadsheetId,
+    spreadsheetUrl: result.spreadsheetUrl,
+    title: result.title ?? "",
+    syncedAt: result.syncedAt ?? ""
+  };
+}
+
 export async function createSpreadsheetForEvent(
   eventId: string
 ): Promise<SpreadsheetSyncResult> {
-  const existingBinding = await getStoredSpreadsheetForEvent(eventId);
+  const existingBinding =
+    (await fetchBindingFromAppsScript(eventId)) ?? (await getStoredSpreadsheetForEvent(eventId));
 
   if (existingBinding) {
     return syncSpreadsheetForEvent(eventId);
@@ -350,7 +386,8 @@ export async function syncSpreadsheetForEvent(
 ): Promise<SpreadsheetSyncResult> {
   const payload = buildEventPayload(eventId);
   const awaitedPayload = await payload;
-  const stored = await getStoredSpreadsheetForEvent(eventId);
+  const stored =
+    (await fetchBindingFromAppsScript(eventId)) ?? (await getStoredSpreadsheetForEvent(eventId));
 
   if (!stored) {
     return createSpreadsheetForEvent(eventId);
@@ -371,7 +408,9 @@ export async function syncSpreadsheetForEvent(
 }
 
 export async function getSpreadsheetBindingForEvent(eventId: string) {
-  return getStoredSpreadsheetForEvent(eventId);
+  return (
+    (await fetchBindingFromAppsScript(eventId)) ?? (await getStoredSpreadsheetForEvent(eventId))
+  );
 }
 
 export async function getGoogleWorkspaceSummary() {
