@@ -159,6 +159,23 @@ function getEventBinding_(eventId) {
   }
 
   var event = findEventRecordById_(eventId);
+  if ((!event || !event.spreadsheetId || !event.spreadsheetUrl)) {
+    var storedId = PropertiesService.getScriptProperties().getProperty(
+      "EVENT_MAP_" + eventId
+    );
+
+    if (storedId && fileExists_(storedId)) {
+      var file = DriveApp.getFileById(storedId);
+      return {
+        ok: true,
+        spreadsheetId: storedId,
+        spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + storedId + "/edit",
+        title: file.getName(),
+        syncedAt: event && event.syncedAt ? event.syncedAt : ""
+      };
+    }
+  }
+
   if (!event || !event.spreadsheetId || !event.spreadsheetUrl) {
     return {
       ok: true

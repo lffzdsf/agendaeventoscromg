@@ -21,7 +21,7 @@ export async function PUT(
 
   if (googleWorkspace.configured) {
     try {
-      await syncSpreadsheetForEvent(saved.id);
+      await syncSpreadsheetForEvent(saved.id, { createIfMissing: false });
     } catch (error) {
       console.warn("Nao foi possivel sincronizar a planilha do evento apos a edicao.", error);
     }

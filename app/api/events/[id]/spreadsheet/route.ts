@@ -28,7 +28,7 @@ export async function POST(
   try {
     const result =
       mode === "sync"
-        ? await syncSpreadsheetForEvent(id)
+        ? await syncSpreadsheetForEvent(id, { createIfMissing: false })
         : await createSpreadsheetForEvent(id);
 
     return NextResponse.json(result);

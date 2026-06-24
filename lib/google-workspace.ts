@@ -49,6 +49,10 @@ type SpreadsheetSyncResult = {
   mode: "created" | "synced";
 };
 
+type SyncSpreadsheetOptions = {
+  createIfMissing?: boolean;
+};
+
 type EventSheetPayload = Awaited<ReturnType<typeof buildEventPayload>>;
 
 export function getGoogleWorkspaceConfig() {
@@ -382,7 +386,8 @@ export async function createSpreadsheetForEvent(
 }
 
 export async function syncSpreadsheetForEvent(
-  eventId: string
+  eventId: string,
+  options: SyncSpreadsheetOptions = {}
 ): Promise<SpreadsheetSyncResult> {
   const payload = buildEventPayload(eventId);
   const awaitedPayload = await payload;
@@ -390,7 +395,13 @@ export async function syncSpreadsheetForEvent(
     (await fetchBindingFromAppsScript(eventId)) ?? (await getStoredSpreadsheetForEvent(eventId));
 
   if (!stored) {
-    return createSpreadsheetForEvent(eventId);
+    if (options.createIfMissing) {
+      return createSpreadsheetForEvent(eventId);
+    }
+
+    throw new Error(
+      "Nenhuma planilha vinculada foi encontrada para este evento no Google Drive."
+    );
   }
 
   const result = await callAppsScript("sync", awaitedPayload, stored.spreadsheetId);

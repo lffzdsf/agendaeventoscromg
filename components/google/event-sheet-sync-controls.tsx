@@ -47,7 +47,7 @@ export function EventSheetSyncControls({
 
   const hasSpreadsheet = Boolean(spreadsheetUrl);
 
-  async function submit(mode: "create" | "sync") {
+  async function submit(mode: "sync") {
     setIsLoading(true);
     setError(null);
 
@@ -87,7 +87,7 @@ export function EventSheetSyncControls({
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3">
         <Button
-          onClick={() => submit(hasSpreadsheet ? "sync" : "create")}
+          onClick={() => submit("sync")}
           disabled={isLoading}
         >
           {isLoading ? (
@@ -97,7 +97,7 @@ export function EventSheetSyncControls({
           ) : (
             <Sheet className="h-4 w-4" />
           )}
-          {hasSpreadsheet ? "Sincronizar planilha" : "Criar planilha do evento"}
+          {hasSpreadsheet ? "Sincronizar planilha" : "Vincular planilha existente"}
         </Button>
 
         {spreadsheetUrl ? (
@@ -118,6 +118,12 @@ export function EventSheetSyncControls({
             A sincronização envia os dados atuais da página para as abas de eventos,
             programação, palestrantes, tarefas, fornecedores e comunicação.
           </p>
+          {!hasSpreadsheet ? (
+            <p>
+              Nenhuma planilha nova será criada automaticamente. O app apenas procura e vincula a
+              planilha já existente do evento no Google Drive.
+            </p>
+          ) : null}
           {lastAction === "created" ? (
             <p>A primeira criação já gravou o vínculo do evento com a planilha para evitar duplicidade.</p>
           ) : null}
