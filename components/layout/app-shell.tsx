@@ -1,10 +1,8 @@
 import Link from "next/link";
-import type { Session } from "next-auth";
 import {
   ClipboardList,
   KanbanSquare,
   LayoutDashboard,
-  LogOut,
   Megaphone,
   Mic2,
   Package2,
@@ -12,7 +10,6 @@ import {
   Users2
 } from "lucide-react";
 
-import { signOut } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -29,12 +26,10 @@ const navigation = [
 
 export function AppShell({
   children,
-  pathname,
-  session
+  pathname
 }: {
   children: React.ReactNode;
   pathname: string;
-  session: Session | null;
 }) {
   return (
     <div className="min-h-screen">
@@ -90,29 +85,6 @@ export function AppShell({
                   className="w-full md:w-72"
                   placeholder="Buscar evento, palestrante ou tarefa"
                 />
-                <div className="hidden rounded-2xl border border-border/70 bg-secondary/60 px-4 py-2 text-right md:block">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Acesso
-                  </p>
-                  <p className="max-w-56 truncate text-sm font-medium">
-                    {session?.user?.email ?? "Conta interna"}
-                  </p>
-                </div>
-                <form
-                  action={async () => {
-                    "use server";
-                    await signOut({ redirectTo: "/login" });
-                  }}
-                >
-                  <button
-                    type="submit"
-                    className="inline-flex h-11 items-center justify-center rounded-2xl border border-border/70 bg-secondary/70 px-4 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-                    aria-label="Sair da plataforma"
-                  >
-                    <LogOut className="h-4 w-4 md:mr-2" />
-                    <span className="hidden md:inline">Sair</span>
-                  </button>
-                </form>
                 <ThemeToggle />
               </div>
             </div>

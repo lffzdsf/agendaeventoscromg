@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { headers } from "next/headers";
 
-import { auth } from "@/auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -25,20 +24,12 @@ export default async function RootLayout({
 }>) {
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") || "/";
-  const session = await auth();
-  const isLoginPage = pathname.startsWith("/login");
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={manrope.variable}>
         <ThemeProvider>
-          {isLoginPage ? (
-            children
-          ) : (
-            <AppShell pathname={pathname} session={session}>
-              {children}
-            </AppShell>
-          )}
+          <AppShell pathname={pathname}>{children}</AppShell>
         </ThemeProvider>
       </body>
     </html>
